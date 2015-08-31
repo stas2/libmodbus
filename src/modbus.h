@@ -168,11 +168,13 @@ const char *modbus_strerror(int errnum);
 int modbus_read_bits(modbus_t *ctx, int addr, int nb, uint8_t *dest);
 int modbus_read_input_bits(modbus_t *ctx, int addr, int nb, uint8_t *dest);
 int modbus_read_registers(modbus_t *ctx, int addr, int nb, uint16_t *dest);
+int modbus_read_registers32(modbus_t *ctx, int addr, int nb, uint16_t *dest);
 int modbus_read_input_registers(modbus_t *ctx, int addr, int nb, uint16_t *dest);
 int modbus_write_bit(modbus_t *ctx, int coil_addr, int status);
 int modbus_write_register(modbus_t *ctx, int reg_addr, int value);
 int modbus_write_bits(modbus_t *ctx, int addr, int nb, const uint8_t *data);
 int modbus_write_registers(modbus_t *ctx, int addr, int nb, const uint16_t *data);
+int modbus_write_registers32(modbus_t *ctx, int addr, int nb, const uint16_t *data);
 int modbus_write_and_read_registers(modbus_t *ctx, int write_addr, int write_nb,
                                     const uint16_t *src, int read_addr, int read_nb,
                                     uint16_t *dest);

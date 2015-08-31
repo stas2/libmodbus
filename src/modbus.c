@@ -144,6 +144,13 @@ static unsigned int compute_response_length_from_request(modbus_t *ctx, uint8_t 
         /* Header + 2 * nb values */
         length = 2 + 2 * (req[offset + 3] << 8 | req[offset + 4]);
         break;
+    case _FC_WRITE_MULTIPLE_REGISTERS32:
+        length = 7;
+        break;
+    case _FC_READ_HOLDING_REGISTERS32:
+        /* Header + 2 * nb values */
+        length = 2 + 2 * (req[offset + 5] << 8 | req[offset + 6]);
+        break;
     case _FC_READ_EXCEPTION_STATUS:
         length = 3;
         break;
@@ -254,6 +261,8 @@ static uint8_t compute_meta_length_after_function(int function,
         } else if (function == _FC_WRITE_MULTIPLE_COILS ||
                    function == _FC_WRITE_MULTIPLE_REGISTERS) {
             length = 5;
+        } else if (function == _FC_WRITE_MULTIPLE_REGISTERS32) {
+            length = 7;
         } else if (function == _FC_WRITE_AND_READ_REGISTERS) {
             length = 9;
         } else {
@@ -268,6 +277,9 @@ static uint8_t compute_meta_length_after_function(int function,
         case _FC_WRITE_MULTIPLE_COILS:
         case _FC_WRITE_MULTIPLE_REGISTERS:
             length = 4;
+            break;
+        case _FC_WRITE_MULTIPLE_REGISTERS32:
+            length = 6;
             break;
         default:
             length = 1;
@@ -290,6 +302,9 @@ static int compute_data_length_after_meta(modbus_t *ctx, uint8_t *msg,
         case _FC_WRITE_MULTIPLE_REGISTERS:
             length = msg[ctx->backend->header_length + 5];
             break;
+        case _FC_WRITE_MULTIPLE_REGISTERS32:
+            length = msg[ctx->backend->header_length + 7];
+            break;
         case _FC_WRITE_AND_READ_REGISTERS:
             length = msg[ctx->backend->header_length + 9];
             break;
@@ -300,7 +315,8 @@ static int compute_data_length_after_meta(modbus_t *ctx, uint8_t *msg,
         /* MSG_CONFIRMATION */
         if (function <= _FC_READ_INPUT_REGISTERS ||
             function == _FC_REPORT_SLAVE_ID ||
-            function == _FC_WRITE_AND_READ_REGISTERS) {
+            function == _FC_WRITE_AND_READ_REGISTERS ||
+            function == _FC_READ_HOLDING_REGISTERS32) {
             length = msg[ctx->backend->header_length + 1];
         } else {
             length = 0;
@@ -533,11 +549,21 @@ static int check_confirmation(modbus_t *ctx, uint8_t *req,
             req_nb_value = (req[offset + 3] << 8) + req[offset + 4];
             rsp_nb_value = (rsp[offset + 1] / 2);
             break;
+        case _FC_READ_HOLDING_REGISTERS32:
+            /* Read functions 1 value = 2 bytes */
+            req_nb_value = (req[offset + 5] << 8) + req[offset + 6];
+            rsp_nb_value = (rsp[offset + 1] / 2);
+            break;
         case _FC_WRITE_MULTIPLE_COILS:
         case _FC_WRITE_MULTIPLE_REGISTERS:
             /* N Write functions */
             req_nb_value = (req[offset + 3] << 8) + req[offset + 4];
             rsp_nb_value = (rsp[offset + 3] << 8) | rsp[offset + 4];
+            break;
+        case _FC_WRITE_MULTIPLE_REGISTERS32:
+            /* N Write functions */
+            req_nb_value = (req[offset + 5] << 8) + req[offset + 6];
+            rsp_nb_value = (rsp[offset + 5] << 8) | rsp[offset + 6];
             break;
         case _FC_REPORT_SLAVE_ID:
             /* Report slave ID (bytes received) */
@@ -1169,6 +1195,27 @@ int modbus_read_registers(modbus_t *ctx, int addr, int nb, uint16_t *dest)
     return status;
 }
 
+/* Reads the holding registers of remote device and put the data into an
+   array */
+int modbus_read_registers32(modbus_t *ctx, int addr, int nb, uint16_t *dest)
+{
+    int status;
+
+    if (nb > MODBUS_MAX_READ_REGISTERS) {
+        if (ctx->debug) {
+            fprintf(stderr,
+                    "ERROR Too many registers requested (%d > %d)\n",
+                    nb, MODBUS_MAX_READ_REGISTERS);
+        }
+        errno = EMBMDATA;
+        return -1;
+    }
+
+    status = read_registers(ctx, _FC_READ_HOLDING_REGISTERS32,
+                            addr, nb, dest);
+    return status;
+}
+
 /* Reads the input registers of remote device and put the data into an array */
 int modbus_read_input_registers(modbus_t *ctx, int addr, int nb,
                                 uint16_t *dest)
@@ -1308,6 +1355,51 @@ int modbus_write_registers(modbus_t *ctx, int addr, int nb, const uint16_t *src)
 
     req_length = ctx->backend->build_request_basis(ctx,
                                                    _FC_WRITE_MULTIPLE_REGISTERS,
+                                                   addr, nb, req);
+    byte_count = nb * 2;
+    req[req_length++] = byte_count;
+
+    for (i = 0; i < nb; i++) {
+        req[req_length++] = src[i] >> 8;
+        req[req_length++] = src[i] & 0x00FF;
+    }
+
+    rc = send_msg(ctx, req, req_length);
+    if (rc > 0) {
+        uint8_t rsp[MAX_MESSAGE_LENGTH];
+
+        rc = receive_msg(ctx, rsp, MSG_CONFIRMATION);
+        if (rc == -1)
+            return -1;
+
+        rc = check_confirmation(ctx, req, rsp, rc);
+    }
+
+    return rc;
+}
+
+/* Write the values from the array to the registers of the remote device */
+int modbus_write_registers32(modbus_t *ctx, int addr, int nb, const uint16_t *src)
+{
+    int rc;
+    int i;
+    int req_length;
+    int byte_count;
+
+    uint8_t req[MAX_MESSAGE_LENGTH];
+
+    if (nb > MODBUS_MAX_WRITE_REGISTERS) {
+        if (ctx->debug) {
+            fprintf(stderr,
+                    "ERROR Trying to write to too many registers (%d > %d)\n",
+                    nb, MODBUS_MAX_WRITE_REGISTERS);
+        }
+        errno = EMBMDATA;
+        return -1;
+    }
+
+    req_length = ctx->backend->build_request_basis(ctx,
+                                                   _FC_WRITE_MULTIPLE_REGISTERS32,
                                                    addr, nb, req);
     byte_count = nb * 2;
     req[req_length++] = byte_count;

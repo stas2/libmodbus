@@ -125,10 +125,24 @@ int _modbus_tcp_build_request_basis(modbus_t *ctx, int function,
 
     req[6] = ctx->slave;
     req[7] = function;
-    req[8] = addr >> 8;
-    req[9] = addr & 0x00ff;
-    req[10] = nb >> 8;
-    req[11] = nb & 0x00ff;
+
+    if (function == _FC_READ_HOLDING_REGISTERS32
+     || function == _FC_WRITE_MULTIPLE_REGISTERS32) {
+        req[8] = addr >> 24;
+        req[9] = addr >> 16;
+        req[10] = addr >> 8;
+        req[11] = addr;
+        req[12] = nb >> 8;
+        req[13] = nb & 0x00ff;
+
+        return 14;
+    }
+    else {
+        req[8] = addr >> 8;
+        req[9] = addr & 0x00ff;
+        req[10] = nb >> 8;
+        req[11] = nb & 0x00ff;
+    }
 
     return _MODBUS_TCP_PRESET_REQ_LENGTH;
 }
