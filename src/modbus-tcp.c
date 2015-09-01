@@ -117,7 +117,7 @@ static int _modbus_tcp_build_request_basis(modbus_t *ctx, int function,
 }
 
 /* Builds a TCP response header */
-static int _modbus_tcp_build_response_basis(sft_t *sft, uint8_t *rsp)
+static int _modbus_tcp_build_response_basis(modbus_t *ctx, sft_t *sft, uint8_t *rsp)
 {
     /* Extract from MODBUS Messaging on TCP/IP Implementation
        Guide V1.0b (page 23/46):

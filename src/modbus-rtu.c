@@ -119,7 +119,7 @@ static int _modbus_rtu_build_request_basis(modbus_t *ctx, int function,
 }
 
 /* Builds a RTU response header */
-static int _modbus_rtu_build_response_basis(sft_t *sft, uint8_t *rsp)
+static int _modbus_rtu_build_response_basis(modbus_t *ctx, sft_t *sft, uint8_t *rsp)
 {
     /* In this case, the slave is certainly valid because a check is already
      * done in _modbus_rtu_listen */

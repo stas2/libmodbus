@@ -230,7 +230,7 @@ int modbus_send_raw_request(modbus_t *ctx, uint8_t *raw_req, int raw_req_length)
     /* The t_id is left to zero */
     sft.t_id = 0;
     /* This response function only set the header so it's convenient here */
-    req_length = ctx->backend->build_response_basis(&sft, req);
+    req_length = ctx->backend->build_response_basis(ctx, &sft, req);
 
     if (raw_req_length > 2) {
         /* Copy data after function code */
@@ -663,7 +663,7 @@ static int response_exception(modbus_t *ctx, sft_t *sft,
     int rsp_length;
 
     sft->function = sft->function + 0x80;
-    rsp_length = ctx->backend->build_response_basis(sft, rsp);
+    rsp_length = ctx->backend->build_response_basis(ctx, sft, rsp);
 
     /* Positive exception code */
     rsp[rsp_length++] = exception_code;
@@ -722,7 +722,7 @@ int modbus_reply(modbus_t *ctx, const uint8_t *req,
                 ctx, &sft,
                 MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, rsp);
         } else {
-            rsp_length = ctx->backend->build_response_basis(&sft, rsp);
+            rsp_length = ctx->backend->build_response_basis(ctx, &sft, rsp);
             rsp[rsp_length++] = (nb / 8) + ((nb % 8) ? 1 : 0);
             rsp_length = response_io_status(address, nb,
                                             mb_mapping->tab_bits,
@@ -755,7 +755,7 @@ int modbus_reply(modbus_t *ctx, const uint8_t *req,
                 ctx, &sft,
                 MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, rsp);
         } else {
-            rsp_length = ctx->backend->build_response_basis(&sft, rsp);
+            rsp_length = ctx->backend->build_response_basis(ctx, &sft, rsp);
             rsp[rsp_length++] = (nb / 8) + ((nb % 8) ? 1 : 0);
             rsp_length = response_io_status(address, nb,
                                             mb_mapping->tab_input_bits,
@@ -788,7 +788,7 @@ int modbus_reply(modbus_t *ctx, const uint8_t *req,
         } else {
             int i;
 
-            rsp_length = ctx->backend->build_response_basis(&sft, rsp);
+            rsp_length = ctx->backend->build_response_basis(ctx, &sft, rsp);
             rsp[rsp_length++] = nb << 1;
             for (i = address; i < address + nb; i++) {
                 rsp[rsp_length++] = mb_mapping->tab_registers[i] >> 8;
@@ -824,7 +824,7 @@ int modbus_reply(modbus_t *ctx, const uint8_t *req,
         } else {
             int i;
 
-            rsp_length = ctx->backend->build_response_basis(&sft, rsp);
+            rsp_length = ctx->backend->build_response_basis(ctx, &sft, rsp);
             rsp[rsp_length++] = nb << 1;
             for (i = address; i < address + nb; i++) {
                 rsp[rsp_length++] = mb_mapping->tab_input_registers[i] >> 8;
@@ -908,7 +908,7 @@ int modbus_reply(modbus_t *ctx, const uint8_t *req,
             /* 6 = byte count */
             modbus_set_bits_from_bytes(mb_mapping->tab_bits, address, nb, &req[offset + 6]);
 
-            rsp_length = ctx->backend->build_response_basis(&sft, rsp);
+            rsp_length = ctx->backend->build_response_basis(ctx, &sft, rsp);
             /* 4 to copy the bit address (2) and the quantity of bits */
             memcpy(rsp + rsp_length, req + rsp_length, 4);
             rsp_length += 4;
@@ -947,7 +947,7 @@ int modbus_reply(modbus_t *ctx, const uint8_t *req,
                     (req[offset + j] << 8) + req[offset + j + 1];
             }
 
-            rsp_length = ctx->backend->build_response_basis(&sft, rsp);
+            rsp_length = ctx->backend->build_response_basis(ctx, &sft, rsp);
             /* 4 to copy the address (2) and the no. of registers */
             memcpy(rsp + rsp_length, req + rsp_length, 4);
             rsp_length += 4;
@@ -958,7 +958,7 @@ int modbus_reply(modbus_t *ctx, const uint8_t *req,
         int str_len;
         int byte_count_pos;
 
-        rsp_length = ctx->backend->build_response_basis(&sft, rsp);
+        rsp_length = ctx->backend->build_response_basis(ctx, &sft, rsp);
         /* Skip byte count for now */
         byte_count_pos = rsp_length++;
         rsp[rsp_length++] = _REPORT_SLAVE_ID;
@@ -1029,7 +1029,7 @@ int modbus_reply(modbus_t *ctx, const uint8_t *req,
                                             MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, rsp);
         } else {
             int i, j;
-            rsp_length = ctx->backend->build_response_basis(&sft, rsp);
+            rsp_length = ctx->backend->build_response_basis(ctx, &sft, rsp);
             rsp[rsp_length++] = nb << 1;
 
             /* Write first.
@@ -1078,7 +1078,7 @@ int modbus_reply_exception(modbus_t *ctx, const uint8_t *req,
     sft.slave = slave;
     sft.function = function + 0x80;;
     sft.t_id = ctx->backend->prepare_response_tid(req, &dummy_length);
-    rsp_length = ctx->backend->build_response_basis(&sft, rsp);
+    rsp_length = ctx->backend->build_response_basis(ctx, &sft, rsp);
 
     /* Positive exception code */
     if (exception_code < MODBUS_EXCEPTION_MAX) {
