@@ -217,7 +217,9 @@ int modbus_send_raw_request(modbus_t *ctx, uint8_t *raw_req, int raw_req_length)
         return -1;
     }
 
-    if (raw_req_length < 2 || raw_req_length > (MODBUS_MAX_PDU_LENGTH + 1)) {
+    int min_req_length = 1 + ctx->slave_size;
+
+    if (raw_req_length < min_req_length || raw_req_length > (MODBUS_MAX_PDU_LENGTH + ctx->slave_size)) {
         /* The raw request must contain function and slave at least and
            must not be longer than the maximum pdu length plus the slave
            address. */
@@ -225,17 +227,26 @@ int modbus_send_raw_request(modbus_t *ctx, uint8_t *raw_req, int raw_req_length)
         return -1;
     }
 
-    sft.slave = raw_req[0];
-    sft.function = raw_req[1];
+    if (ctx->slave_size == 2) {
+        sft.slave = raw_req[0];
+        sft.slave <<= 8;
+        sft.slave |= raw_req[1];
+    }
+    else {
+        sft.slave = raw_req[0];
+    }
+
+    sft.function = raw_req[ctx->slave_size];
+
     /* The t_id is left to zero */
     sft.t_id = 0;
     /* This response function only set the header so it's convenient here */
     req_length = ctx->backend->build_response_basis(ctx, &sft, req);
 
-    if (raw_req_length > 2) {
+    if (raw_req_length > min_req_length) {
         /* Copy data after function code */
-        memcpy(req + req_length, raw_req + 2, raw_req_length - 2);
-        req_length += raw_req_length - 2;
+    memcpy(req + req_length, raw_req + min_req_length, raw_req_length - min_req_length);
+        req_length += raw_req_length - min_req_length;
     }
 
     return send_msg(ctx, req, req_length);
@@ -681,7 +692,15 @@ int modbus_reply(modbus_t *ctx, const uint8_t *req,
                  int req_length, modbus_mapping_t *mb_mapping)
 {
     int offset = ctx->backend->header_length;
-    int slave = req[offset - 1];
+    int slave = 0;
+    if (ctx->slave_size == 2) {
+        slave = req[offset - 2];
+        slave <<= 8;
+        slave |= req[offset - 1];
+    }
+    else if (ctx->slave_size == 1) {
+        slave = req[offset - 1];
+    }
     int function = req[offset];
     uint16_t address = (req[offset + 1] << 8) + req[offset + 2];
     uint8_t rsp[MAX_MESSAGE_LENGTH];
@@ -1063,7 +1082,15 @@ int modbus_reply_exception(modbus_t *ctx, const uint8_t *req,
                            unsigned int exception_code)
 {
     int offset = ctx->backend->header_length;
-    int slave = req[offset - 1];
+    int slave = 0;
+    if (ctx->slave_size == 2) {
+        slave = req[offset - 2];
+        slave <<= 8;
+        slave |= req[offset - 1];
+    }
+    else if (ctx->slave_size == 1) {
+        slave = req[offset - 1];
+    }
     int function = req[offset];
     uint8_t rsp[MAX_MESSAGE_LENGTH];
     int rsp_length;
@@ -1620,6 +1647,8 @@ void _modbus_init_common(modbus_t *ctx)
     ctx->slave = -1;
     ctx->s = -1;
 
+    ctx->slave_size = 1;
+
     ctx->debug = FALSE;
     ctx->error_recovery = MODBUS_ERROR_RECOVERY_NONE;
 
@@ -1639,6 +1668,16 @@ int modbus_set_slave(modbus_t *ctx, int slave)
     }
 
     return ctx->backend->set_slave(ctx, slave);
+}
+
+int modbus_set_slave_size(modbus_t *ctx, int slave_size)
+{
+    if (ctx == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return ctx->backend->set_slave_size(ctx, slave_size);
 }
 
 int modbus_set_error_recovery(modbus_t *ctx,

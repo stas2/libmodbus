@@ -102,6 +102,18 @@ static int _modbus_set_slave(modbus_t *ctx, int slave)
     return 0;
 }
 
+static int _modbus_set_slave_size(modbus_t *ctx, int slave_size)
+{
+    if (slave_size != 1) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ctx->slave_size = slave_size;
+
+    return 0;
+}
+
 /* Builds a RTU request header */
 static int _modbus_rtu_build_request_basis(modbus_t *ctx, int function,
                                            int addr, int nb,
@@ -1115,6 +1127,7 @@ const modbus_backend_t _modbus_rtu_backend = {
     _MODBUS_RTU_CHECKSUM_LENGTH,
     MODBUS_RTU_MAX_ADU_LENGTH,
     _modbus_set_slave,
+    _modbus_set_slave_size,
     _modbus_rtu_build_request_basis,
     _modbus_rtu_build_response_basis,
     _modbus_rtu_prepare_response_tid,

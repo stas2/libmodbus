@@ -69,17 +69,37 @@ static int _modbus_tcp_init_win32(void)
 
 static int _modbus_set_slave(modbus_t *ctx, int slave)
 {
-    /* Broadcast address is 0 (MODBUS_BROADCAST_ADDRESS) */
-    if (slave >= 0 && slave <= 247) {
+    if (ctx->slave_size == 1) {
+        /* Broadcast address is 0 (MODBUS_BROADCAST_ADDRESS) */
+        if (slave >= 0 && slave <= 247) {
+            ctx->slave = slave;
+        } else if (slave == MODBUS_TCP_SLAVE) {
+            /* The special value MODBUS_TCP_SLAVE (0xFF) can be used in TCP mode to
+             * restore the default value. */
+            ctx->slave = slave;
+        } else {
+            errno = EINVAL;
+            return -1;
+        }
+    }
+    else {
         ctx->slave = slave;
-    } else if (slave == MODBUS_TCP_SLAVE) {
-        /* The special value MODBUS_TCP_SLAVE (0xFF) can be used in TCP mode to
-         * restore the default value. */
-        ctx->slave = slave;
-    } else {
+    }
+
+    return 0;
+}
+
+static int _modbus_set_slave_size(modbus_t *ctx, int slave_size)
+{
+    if (slave_size != 1 && slave_size != 2) {
         errno = EINVAL;
         return -1;
     }
+
+    ctx->slave_size = slave_size;
+
+    ctx->backend->header_length = _MODBUS_TCP_HEADER_LENGTH + slave_size - 1;
+    ctx->backend->max_adu_length = MODBUS_TCP_MAX_ADU_LENGTH + slave_size - 1;
 
     return 0;
 }
@@ -106,14 +126,22 @@ static int _modbus_tcp_build_request_basis(modbus_t *ctx, int function,
     /* Length will be defined later by set_req_length_tcp at offsets 4
        and 5 */
 
-    req[6] = ctx->slave;
-    req[7] = function;
-    req[8] = addr >> 8;
-    req[9] = addr & 0x00ff;
-    req[10] = nb >> 8;
-    req[11] = nb & 0x00ff;
+    if (ctx->slave_size == 2) {
+        req[6] = ctx->slave >> 8;
+        req[7] = ctx->slave;
+    }
+    else if (ctx->slave_size == 1) {
+        req[6] = ctx->slave;
+    }
 
-    return _MODBUS_TCP_PRESET_REQ_LENGTH;
+    unsigned int header_size = ctx->backend->header_length;
+    req[header_size + 0] = function;
+    req[header_size + 1] = addr >> 8;
+    req[header_size + 2] = addr & 0x00ff;
+    req[header_size + 3] = nb >> 8;
+    req[header_size + 4] = nb & 0x00ff;
+
+    return header_size + 4 + 1; //_MODBUS_TCP_PRESET_REQ_LENGTH;
 }
 
 /* Builds a TCP response header */
@@ -132,11 +160,21 @@ static int _modbus_tcp_build_response_basis(modbus_t *ctx, sft_t *sft, uint8_t *
 
     /* Length will be set later by send_msg (4 and 5) */
 
-    /* The slave ID is copied from the indication */
-    rsp[6] = sft->slave;
-    rsp[7] = sft->function;
+    unsigned response_length = _MODBUS_TCP_PRESET_RSP_LENGTH + ctx->slave_size - 1;
 
-    return _MODBUS_TCP_PRESET_RSP_LENGTH;
+    /* The slave ID is copied from the indication */
+    if (ctx->slave_size == 2) {
+        rsp[6] = sft->slave >> 8;
+        rsp[7] = sft->slave;
+
+    }
+    else if (ctx->slave_size == 1) {
+        rsp[6] = sft->slave;
+    }
+
+    rsp[response_length - 1] = sft->function;
+
+    return response_length;
 }
 
 
@@ -735,6 +773,7 @@ const modbus_backend_t _modbus_tcp_backend = {
     _MODBUS_TCP_CHECKSUM_LENGTH,
     MODBUS_TCP_MAX_ADU_LENGTH,
     _modbus_set_slave,
+    _modbus_set_slave_size,
     _modbus_tcp_build_request_basis,
     _modbus_tcp_build_response_basis,
     _modbus_tcp_prepare_response_tid,
@@ -758,6 +797,7 @@ const modbus_backend_t _modbus_tcp_pi_backend = {
     _MODBUS_TCP_CHECKSUM_LENGTH,
     MODBUS_TCP_MAX_ADU_LENGTH,
     _modbus_set_slave,
+    _modbus_set_slave_size,
     _modbus_tcp_build_request_basis,
     _modbus_tcp_build_response_basis,
     _modbus_tcp_prepare_response_tid,
@@ -799,6 +839,8 @@ modbus_t* modbus_new_tcp(const char *ip, int port)
 
     /* Could be changed after to reach a remote serial Modbus device */
     ctx->slave = MODBUS_TCP_SLAVE;
+
+    ctx->slave_size = 1;
 
     ctx->backend = (modbus_backend_t *)malloc(sizeof(modbus_backend_t));
     memcpy(ctx->backend, &_modbus_tcp_backend, sizeof(modbus_backend_t));
@@ -844,6 +886,8 @@ modbus_t* modbus_new_tcp_pi(const char *node, const char *service)
 
     /* Could be changed after to reach a remote serial Modbus device */
     ctx->slave = MODBUS_TCP_SLAVE;
+
+    ctx->slave_size = 1;
 
     ctx->backend = (modbus_backend_t *)malloc(sizeof(modbus_backend_t));
     memcpy(ctx->backend, &_modbus_tcp_pi_backend, sizeof(modbus_backend_t));

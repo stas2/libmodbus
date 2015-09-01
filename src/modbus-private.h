@@ -29,7 +29,7 @@ MODBUS_BEGIN_DECLS
  * - HEADER_LENGTH_TCP (7) + function (1) + address (2) + number (2)
  * - HEADER_LENGTH_RTU (1) + function (1) + address (2) + number (2) + CRC (2)
  */
-#define _MIN_REQ_LENGTH 12
+#define _MIN_REQ_LENGTH 13
 
 #define _REPORT_SLAVE_ID 180
 
@@ -70,6 +70,7 @@ typedef struct _modbus_backend {
     unsigned int checksum_length;
     unsigned int max_adu_length;
     int (*set_slave) (modbus_t *ctx, int slave);
+    int (*set_slave_size) (modbus_t *ctx, int slave_size);
     int (*build_request_basis) (modbus_t *ctx, int function, int addr,
                                 int nb, uint8_t *req);
     int (*build_response_basis) (modbus_t *ctx, sft_t *sft, uint8_t *rsp);
@@ -92,6 +93,7 @@ typedef struct _modbus_backend {
 struct _modbus {
     /* Slave address */
     int slave;
+    int slave_size;
     /* Socket or file descriptor */
     int s;
     int debug;
