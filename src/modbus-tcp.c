@@ -724,6 +724,7 @@ static int _modbus_tcp_select(modbus_t *ctx, fd_set *rset, struct timeval *tv, i
 }
 
 static void _modbus_tcp_free(modbus_t *ctx) {
+    free(ctx->backend);
     free(ctx->backend_data);
     free(ctx);
 }
@@ -799,7 +800,8 @@ modbus_t* modbus_new_tcp(const char *ip, int port)
     /* Could be changed after to reach a remote serial Modbus device */
     ctx->slave = MODBUS_TCP_SLAVE;
 
-    ctx->backend = &_modbus_tcp_backend;
+    ctx->backend = (modbus_backend_t *)malloc(sizeof(modbus_backend_t));
+    memcpy(ctx->backend, &_modbus_tcp_backend, sizeof(modbus_backend_t));
 
     ctx->backend_data = (modbus_tcp_t *)malloc(sizeof(modbus_tcp_t));
     ctx_tcp = (modbus_tcp_t *)ctx->backend_data;
@@ -843,7 +845,8 @@ modbus_t* modbus_new_tcp_pi(const char *node, const char *service)
     /* Could be changed after to reach a remote serial Modbus device */
     ctx->slave = MODBUS_TCP_SLAVE;
 
-    ctx->backend = &_modbus_tcp_pi_backend;
+    ctx->backend = (modbus_backend_t *)malloc(sizeof(modbus_backend_t));
+    memcpy(ctx->backend, &_modbus_tcp_pi_backend, sizeof(modbus_backend_t));
 
     ctx->backend_data = (modbus_tcp_pi_t *)malloc(sizeof(modbus_tcp_pi_t));
     ctx_tcp_pi = (modbus_tcp_pi_t *)ctx->backend_data;
