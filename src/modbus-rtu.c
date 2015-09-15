@@ -392,61 +392,23 @@ static int _modbus_rtu_check_integrity(modbus_t *ctx, uint8_t *msg,
     }
 }
 
-/* Sets up a serial port for RTU communications */
-static int _modbus_rtu_connect(modbus_t *ctx)
+static int modbus_rtu_change_baud(modbus_t *ctx)
 {
 #if defined(_WIN32)
     DCB dcb;
 #else
     struct termios tios;
     speed_t speed;
-    int flags;
 #endif
     modbus_rtu_t *ctx_rtu = ctx->backend_data;
 
     if (ctx->debug) {
-        printf("Opening %s at %d bauds (%c, %d, %d)\n",
+        printf("Changing %s to %d bauds (%c, %d, %d)\n",
                ctx_rtu->device, ctx_rtu->baud, ctx_rtu->parity,
                ctx_rtu->data_bit, ctx_rtu->stop_bit);
     }
 
 #if defined(_WIN32)
-    /* Some references here:
-     * http://msdn.microsoft.com/en-us/library/aa450602.aspx
-     */
-    win32_ser_init(&ctx_rtu->w_ser);
-
-    /* ctx_rtu->device should contain a string like "COMxx:" xx being a decimal
-     * number */
-    ctx_rtu->w_ser.fd = CreateFileA(ctx_rtu->device,
-                                    GENERIC_READ | GENERIC_WRITE,
-                                    0,
-                                    NULL,
-                                    OPEN_EXISTING,
-                                    0,
-                                    NULL);
-
-    /* Error checking */
-    if (ctx_rtu->w_ser.fd == INVALID_HANDLE_VALUE) {
-        if (ctx->debug) {
-            fprintf(stderr, "ERROR Can't open the device %s (LastError %d)\n",
-                    ctx_rtu->device, (int)GetLastError());
-        }
-        return -1;
-    }
-
-    /* Save params */
-    ctx_rtu->old_dcb.DCBlength = sizeof(DCB);
-    if (!GetCommState(ctx_rtu->w_ser.fd, &ctx_rtu->old_dcb)) {
-        if (ctx->debug) {
-            fprintf(stderr, "ERROR Error getting configuration (LastError %d)\n",
-                    (int)GetLastError());
-        }
-        CloseHandle(ctx_rtu->w_ser.fd);
-        ctx_rtu->w_ser.fd = INVALID_HANDLE_VALUE;
-        return -1;
-    }
-
     /* Build new configuration (starting from current settings) */
     dcb = ctx_rtu->old_dcb;
 
@@ -570,34 +532,9 @@ static int _modbus_rtu_connect(modbus_t *ctx)
             fprintf(stderr, "ERROR Error setting new configuration (LastError %d)\n",
                     (int)GetLastError());
         }
-        CloseHandle(ctx_rtu->w_ser.fd);
-        ctx_rtu->w_ser.fd = INVALID_HANDLE_VALUE;
         return -1;
     }
 #else
-    /* The O_NOCTTY flag tells UNIX that this program doesn't want
-       to be the "controlling terminal" for that port. If you
-       don't specify this then any input (such as keyboard abort
-       signals and so forth) will affect your process
-
-       Timeouts are ignored in canonical input mode or when the
-       NDELAY option is set on the file via open or fcntl */
-    flags = O_RDWR | O_NOCTTY | O_NDELAY | O_EXCL;
-#ifdef O_CLOEXEC
-    flags |= O_CLOEXEC;
-#endif
-
-    ctx->s = open(ctx_rtu->device, flags);
-    if (ctx->s == -1) {
-        if (ctx->debug) {
-            fprintf(stderr, "ERROR Can't open the device %s (%s)\n",
-                    ctx_rtu->device, strerror(errno));
-        }
-        return -1;
-    }
-
-    /* Save */
-    tcgetattr(ctx->s, &ctx_rtu->old_tios);
 
     memset(&tios, 0, sizeof(struct termios));
 
@@ -714,8 +651,6 @@ static int _modbus_rtu_connect(modbus_t *ctx)
     /* Set the baud rate */
     if ((cfsetispeed(&tios, speed) < 0) ||
         (cfsetospeed(&tios, speed) < 0)) {
-        close(ctx->s);
-        ctx->s = -1;
         return -1;
     }
 
@@ -888,6 +823,99 @@ static int _modbus_rtu_connect(modbus_t *ctx)
     tios.c_cc[VTIME] = 0;
 
     if (tcsetattr(ctx->s, TCSANOW, &tios) < 0) {
+        return -1;
+    }
+#endif
+
+    return 0;
+}
+
+/* Sets up a serial port for RTU communications */
+static int _modbus_rtu_connect(modbus_t *ctx)
+{
+#if defined(_WIN32)
+#else
+    int flags;
+#endif
+    modbus_rtu_t *ctx_rtu = ctx->backend_data;
+
+    if (ctx->debug) {
+        printf("Opening %s\n", ctx_rtu->device);
+    }
+
+#if defined(_WIN32)
+    /* Some references here:
+     * http://msdn.microsoft.com/en-us/library/aa450602.aspx
+     */
+    win32_ser_init(&ctx_rtu->w_ser);
+
+    /* ctx_rtu->device should contain a string like "COMxx:" xx being a decimal
+     * number */
+    ctx_rtu->w_ser.fd = CreateFileA(ctx_rtu->device,
+                                    GENERIC_READ | GENERIC_WRITE,
+                                    0,
+                                    NULL,
+                                    OPEN_EXISTING,
+                                    0,
+                                    NULL);
+
+    /* Error checking */
+    if (ctx_rtu->w_ser.fd == INVALID_HANDLE_VALUE) {
+        if (ctx->debug) {
+            fprintf(stderr, "ERROR Can't open the device %s (LastError %d)\n",
+                    ctx_rtu->device, (int)GetLastError());
+        }
+        return -1;
+    }
+
+    /* Save params */
+    ctx_rtu->old_dcb.DCBlength = sizeof(DCB);
+    if (!GetCommState(ctx_rtu->w_ser.fd, &ctx_rtu->old_dcb)) {
+        if (ctx->debug) {
+            fprintf(stderr, "ERROR Error getting configuration (LastError %d)\n",
+                    (int)GetLastError());
+        }
+        CloseHandle(ctx_rtu->w_ser.fd);
+        ctx_rtu->w_ser.fd = INVALID_HANDLE_VALUE;
+        return -1;
+    }
+
+    /* Setup port */
+    if (modbus_rtu_change_baud(ctx) < 0) {
+        if (ctx->debug) {
+            fprintf(stderr, "ERROR Error setting new configuration (LastError %d)\n",
+                    (int)GetLastError());
+        }
+        CloseHandle(ctx_rtu->w_ser.fd);
+        ctx_rtu->w_ser.fd = INVALID_HANDLE_VALUE;
+        return -1;
+    }
+#else
+    /* The O_NOCTTY flag tells UNIX that this program doesn't want
+       to be the "controlling terminal" for that port. If you
+       don't specify this then any input (such as keyboard abort
+       signals and so forth) will affect your process
+
+       Timeouts are ignored in canonical input mode or when the
+       NDELAY option is set on the file via open or fcntl */
+    flags = O_RDWR | O_NOCTTY | O_NDELAY | O_EXCL;
+#ifdef O_CLOEXEC
+    flags |= O_CLOEXEC;
+#endif
+
+    ctx->s = open(ctx_rtu->device, flags);
+    if (ctx->s == -1) {
+        if (ctx->debug) {
+            fprintf(stderr, "ERROR Can't open the device %s (%s)\n",
+                    ctx_rtu->device, strerror(errno));
+        }
+        return -1;
+    }
+
+    /* Save */
+    tcgetattr(ctx->s, &ctx_rtu->old_tios);
+
+    if (modbus_rtu_change_baud(ctx) < 0) {
         close(ctx->s);
         ctx->s = -1;
         return -1;
@@ -1136,6 +1164,7 @@ modbus_t* modbus_new_rtu(const char *device,
 {
     modbus_t *ctx;
     modbus_rtu_t *ctx_rtu;
+    int rc;
 
     /* Check device argument */
     if (device == NULL || *device == 0) {
@@ -1162,16 +1191,12 @@ modbus_t* modbus_new_rtu(const char *device,
     ctx_rtu->device = (char *)malloc((strlen(device) + 1) * sizeof(char));
     strcpy(ctx_rtu->device, device);
 
-    ctx_rtu->baud = baud;
-    if (parity == 'N' || parity == 'E' || parity == 'O') {
-        ctx_rtu->parity = parity;
-    } else {
+    rc = modbus_rtu_set_baud(ctx, baud, parity, data_bit, stop_bit);
+    if (rc) {
         modbus_free(ctx);
-        errno = EINVAL;
+        errno = rc;
         return NULL;
     }
-    ctx_rtu->data_bit = data_bit;
-    ctx_rtu->stop_bit = stop_bit;
 
 #if HAVE_DECL_TIOCSRS485
     /* The RS232 mode has been set by default */
@@ -1189,4 +1214,39 @@ modbus_t* modbus_new_rtu(const char *device,
     ctx_rtu->confirmation_to_ignore = FALSE;
 
     return ctx;
+}
+
+int modbus_rtu_set_baud(modbus_t *ctx, int baud, char parity, int data_bit, int stop_bit)
+{
+    int rc;
+    modbus_rtu_t *ctx_rtu;
+
+    if (ctx->backend->backend_type == _MODBUS_BACKEND_TYPE_RTU) {
+        ctx_rtu = (modbus_rtu_t *)ctx->backend_data;
+
+        ctx_rtu->baud = baud;
+        if (parity == 'N' || parity == 'E' || parity == 'O') {
+            ctx_rtu->parity = parity;
+        } else {
+            return EINVAL;
+        }
+        ctx_rtu->data_bit = data_bit;
+        ctx_rtu->stop_bit = stop_bit;
+
+#if HAVE_DECL_TIOCM_RTS
+        /* Calculate estimated time in micro second to send one byte */
+        ctx_rtu->onebyte_time = (1000 * 1000) * (1 + data_bit + (parity == 'N' ? 0 : 1) + stop_bit) / baud;
+#endif
+
+        if (ctx->s != -1) {
+            rc = modbus_rtu_change_baud(ctx);
+            if (rc < 0) {
+                return rc;
+            }
+        }
+
+        return 0;
+    }
+
+    return EINVAL;
 }
