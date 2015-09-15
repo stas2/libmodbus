@@ -1206,9 +1206,6 @@ modbus_t* modbus_new_rtu(const char *device,
 #if HAVE_DECL_TIOCM_RTS
     /* The RTS use has been set by default */
     ctx_rtu->rts = MODBUS_RTU_RTS_NONE;
-
-    /* Calculate estimated time in micro second to send one byte */
-    ctx_rtu->onebyte_time = (1000 * 1000) * (1 + data_bit + (parity == 'N' ? 0 : 1) + stop_bit) / baud;
 #endif
 
     ctx_rtu->confirmation_to_ignore = FALSE;
